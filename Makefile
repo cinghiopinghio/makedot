@@ -1,11 +1,15 @@
 SHELL := /bin/bash
 LOCAL := $(PWD)
 SELF := makedot
+ifndef XDG_DATA_HOME
+	XDG_DATA_HOME := ${HOME}/.local/share
+endif
 
 REPOS := $(wildcard repos/*)
 REPOS += "utils"
 
 PKGS := $(wildcard $(REPOS:=/dotfiles))
+TMPL := $(wildcard $(REPOS:=/templates))
 # PKGS := $(wildcard repos/*/dotfiles)
 # PKGS += 'utils/dotfiles'
 
@@ -16,7 +20,7 @@ LOCALBIN := $(abspath ./stowsh/)
 STOW := $(LOCALBIN)/stowsh
 STOW_ARGS := -v -s -t $(HOME)
 
-.PHONY: $(PKGS) install help prepare main clean $(HOOKS_POST) $(HOOKS_PRE)
+.PHONY: $(PKGS) $(TMPL) install help prepare main clean $(HOOKS_POST) $(HOOKS_PRE) test all
 
 main:
 	@echo ------------------
@@ -25,6 +29,7 @@ main:
 	@echo "       make clean"
 	@echo "            find and remove all dead links"
 	@echo ------------------
+	echo $(PKGS)
 
 
 prepare: $(STOW)
@@ -43,10 +48,11 @@ $(STOW):
 	chmod 744 $(STOW)
 
 
-install: prepare $(HOOKS_PRE) $(PKGS) $(HOOKS_POST)
+install: prepare $(HOOKS_PRE) $(PKGS) tmpl $(HOOKS_POST)
 	@echo ------------------
 	@echo all well done.
 	@echo ------------------
+
 
 
 $(HOOKS_PRE):
@@ -68,6 +74,20 @@ $(PKGS):
 	@echo Installing $(@)
 	@echo ------------------
 	$(STOW) $(STOW_ARGS) $(@)
+
+
+$(TMPL):
+	@echo ------------------
+	@echo Installing $(@)
+	@echo ------------------
+	python utils/makedottheme.py $(@)
+
+
+tmpl: $(TMPL)
+	@echo ------------------
+	@echo Installing $(@)
+	@echo ------------------
+	$(STOW) $(STOW_ARGS) $(XDG_DATA_HOME)/makedot/compiled
 
 
 clean:
