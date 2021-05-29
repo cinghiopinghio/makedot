@@ -2,10 +2,11 @@
 
 # ------------------------------
 # Functions
+# ------------------------------
 
 
 repo_list(){
-    echo ${MAKEDOT}/repos/* | sed 's/ /\n/g'
+    echo "${MAKEDOT}/repos/"* | sed 's/ /\n/g'
 }
 
 choose_repo(){
@@ -31,43 +32,126 @@ choose_repo(){
 # print to stderr
 echoerr() { echo "$@" 1>&2; }
 
+get_root() {
+    dir="$1"
+    while [[ ! -d "${dir}/.git" ]]
+    do
+        dir=$(dirname "${dir}")
+        if [ "${dir}" == "/" ]
+        then
+            echoerr "No root found"
+            exit
+        fi
+    done
+    echo "${dir}"
+}
+
+verb() {
+    if [[ "${VERBOSE}" ]]
+    then
+        echo true
+    fi
+}
+
+path() {
+    # read path to file
+    # output:
+    #   - fullpath to possibly resolved link target
+    #   - fullpath to file/link location
+    filename="$1"
+    readlink -f -n "$filename" 2>>/dev/null
+    dir=$(dirname "${filename}")
+    cd "$dir" || return
+    echo -n " "
+    echo $PWD/$(basename "$filename")
+}
+
+log() {
+    $VERBOSE || return
+    title=$1
+    description=$2
+    printf '%(%Y-%m-%d %H:%M:%S)T '
+    printf "%-20s" "${title}:"
+    printf "%s\n" "$description"
+}
+
 # ------------------------------
 # Constants
+# ------------------------------
 
 VERBOSE=false
 
 # get location of the repos
 SCRIPTPATH=$(realpath "$0")
 # get root of the project
-for _ in $(seq 5); do MAKEDOT=$(dirname "${MAKEDOT:-${SCRIPTPATH}}"); done
+MAKEDOT=$(get_root "${SCRIPTPATH}")
 # get file path
-NEWFILE=$(realpath -s "$1")
 
-# ----------------------------
+case $1 in
+    '--help'|'-h')
+        echo Usage:
+        echo "$(basename "$0") filepath"
+        exit 0
+        ;;
+    '--verbose'|'-v')
+        VERBOSE=true
+        log "Script location" "${SCRIPTPATH}"
+        log "Makedot location" "${MAKEDOT}"
+        shift
+        ;;
+    *)
+        ;;
+esac
+
+declare -a NEWFILE
+NEWFILE[0]=$(readlink -f "$1")
+NEWFILE[1]=$(readlink -f $(dirname "${1}"))/$(basename "${1}")
+# readarray NEWFILE < <(path "$1")
+log "Swallow" "${NEWFILE[0]}"
+log "Path of interest" "${NEWFILE[1]}"
+
+# ------------------------------
 # Sanity Checks
+# ------------------------------
 
-[ ! -f "${NEWFILE}" ] && echo "no such file" && exit 1
 
-if [ "${NEWFILE#$MAKEDOT}" != "${NEWFILE}" ]; then
+# check if file exists
+[ ! -f "${NEWFILE[0]}" ] && echo "no such file ${NEWFILE[0]}" && exit 1
+# check if link to file exists (may be the same as above)
+[ ! -f "${NEWFILE[1]}" ] && echo "no such file ${NEWFILE[1]}" && exit 1
+
+# check if file is within this repo
+if [ "${NEWFILE[0]#$MAKEDOT}" != "${NEWFILE[0]}" ]; then
     # file inside repo
     echoerr "No! You cannot swallow from this folder"
     exit 2
-elif [ "${NEWFILE#$HOME}" = "${NEWFILE}" ]; then
+elif [ "${NEWFILE[0]#$HOME}" = "${NEWFILE[0]}" ]; then
     # file not in HOME
-    echoerr "Please swallow from your home"
+    echoerr "Please swallow from your HOME"
     exit 3
 fi
 
-# ----------------------------
+# check if link is within this repo
+if [ "${NEWFILE[1]#$MAKEDOT}" != "${NEWFILE[1]}" ]; then
+    # file inside repo
+    echoerr "No! You cannot swallow from this folder"
+    exit 2
+elif [ "${NEWFILE[1]#$HOME}" = "${NEWFILE[1]}" ]; then
+    # file not in HOME
+    echoerr "Please swallow from your HOME"
+    exit 3
+fi
+
+# ------------------------------
 # Actual script
+# ------------------------------
 
 TARGET_PKG=$(choose_repo)/dotfiles
-TARGET=$(dirname "${TARGET_PKG}/${NEWFILE#${HOME}/}")
+TARGET=$(dirname "${TARGET_PKG}/${NEWFILE[1]#${HOME}/}")
 
-${VERBOSE} && echo "Moving ${NEWFILE} to ${TARGET}"
+${VERBOSE} && echo -e "Copying: ${NEWFILE[0]}\nTo: ${TARGET}"
 
 read -p "Are you sure? [yN]" -n 1 -r USERINPUT
-echo
 
 case "${USERINPUT}" in
     y|Y)
@@ -78,6 +162,6 @@ case "${USERINPUT}" in
         ;;
 esac
 
-# make dir and move file
+# make dir and copy file
 mkdir -p "${TARGET}"
-mv "${NEWFILE}" "${TARGET}"
+cp "${NEWFILE[0]}" "${TARGET}"
