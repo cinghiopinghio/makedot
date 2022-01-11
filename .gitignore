@@ -1,2 +1,4 @@
 repos
 stowsh
+
+*.bak
