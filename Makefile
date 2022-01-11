@@ -5,13 +5,12 @@ ifndef XDG_DATA_HOME
 	XDG_DATA_HOME := ${HOME}/.local/share
 endif
 
+# All repos to be installed need to be cloned or copied inside ./repos
 REPOS := $(wildcard repos/*)
 REPOS += "utils"
 
 PKGS := $(wildcard $(REPOS:=/dotfiles))
 TMPL := $(wildcard $(REPOS:=/templates))
-# PKGS := $(wildcard repos/*/dotfiles)
-# PKGS += 'utils/dotfiles'
 
 HOOKS_PRE := $(wildcard $(REPOS:=/hooks/pre))
 HOOKS_POST := $(wildcard $(REPOS:=/hooks/post))
@@ -49,10 +48,9 @@ $(STOW):
 
 
 install: prepare $(HOOKS_PRE) $(PKGS) tmpl $(HOOKS_POST)
-	@echo ------------------
-	@echo all well done.
-	@echo ------------------
-
+	@echo -------------------
+	@echo All done. No errors
+	@echo -------------------
 
 
 $(HOOKS_PRE):
