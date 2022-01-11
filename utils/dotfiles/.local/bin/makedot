@@ -1,24 +1,23 @@
 #!/usr/bin/env bash
+# this script pick a file in your HOME and copy/move it to a dotfile repo
 
 # ------------------------------
 # Functions
 # ------------------------------
 
-
-repo_list(){
+makedot_repo_list(){
     echo "${MAKEDOT}/repos/"* | sed 's/ /\n/g'
 }
 
-choose_repo(){
+makedot_choose_repo(){
     # Select from which repo to save to
-
     if command -v fzf &>/dev/null
     then
         # use FZF
-        repo=$(repo_list | fzf)
+        repo=$(makedot_repo_list | fzf)
     else
         # this is not POSIX (Bash!)
-        select repo in $(repo_list)
+        select repo in $(makedot_repo_list)
         do
             break
         done
@@ -30,7 +29,9 @@ choose_repo(){
 }
 
 # print to stderr
-echoerr() { echo "$@" 1>&2; }
+echoerr() {
+    echo "$@" 1>&2
+}
 
 get_root() {
     dir="$1"
@@ -46,26 +47,6 @@ get_root() {
     echo "${dir}"
 }
 
-verb() {
-    if [[ "${VERBOSE}" ]]
-    then
-        echo true
-    fi
-}
-
-path() {
-    # read path to file
-    # output:
-    #   - fullpath to possibly resolved link target
-    #   - fullpath to file/link location
-    filename="$1"
-    readlink -f -n "$filename" 2>>/dev/null
-    dir=$(dirname "${filename}")
-    cd "$dir" || return
-    echo -n " "
-    echo $PWD/$(basename "$filename")
-}
-
 log() {
     $VERBOSE || return
     title=$1
@@ -75,11 +56,82 @@ log() {
     printf "%s\n" "$description"
 }
 
+makedot_check_file(){
+    # ------------------------------
+    # Sanity Checks
+    # ------------------------------
+    file_realpath="$1"
+    file_path="$2"
+
+    # check if file exists
+    [ ! -f "$file_realpath" ] && echo "no such file $file_realpath" && exit 1
+    # check if link to file exists (may be the same as above)
+    [ ! -f "$file_path" ] && echo "no such file $file_path" && exit 1
+
+    # check if file is within this repo
+    if [ "${file_realpath#"$MAKEDOT"}" != "$file_realpath" ]; then
+        # file inside repo
+        echoerr "No! You cannot swallow from this folder"
+        exit 2
+    elif [ "{$file_realpath#$HOME}" = "$file_realpath" ]; then
+        # file not in HOME
+        echoerr "Please swallow from your HOME"
+        exit 3
+    fi
+
+    # check if link is within this repo
+    if [ "${file_path#"$MAKEDOT"}" != "$file_path" ]; then
+        # file inside repo
+        echoerr "No! You cannot swallow from this folder"
+        exit 4
+    elif [ "{$file_path#$HOME}" = "$file_path" ]; then
+        # file not in HOME
+        echoerr "Please swallow from your HOME"
+        exit 5
+    fi
+}
+
+makedot_get_file() {
+    # get file from userspace
+    # real location
+    NEWFILE_REAL_LOC=$(readlink -f "$1")
+    # location of interests (different from real location if symlink)
+    DIRNAME=$(dirname "$1")
+    NEWFILE_PATH=$(readlink -f "$DIRNAME")/$(basename "$1")
+    log "Swallow" "${NEWFILE_REAL_LOC}"
+    log "Path of interest" "${NEWFILE_PATH}"
+
+    makedot_check_file "$NEWFILE_REAL_LOC" "$NEWFILE_PATH"
+
+    # ------------------------------
+    # Actual script
+    # ------------------------------
+
+    # target folder
+    TARGET="${NEWFILE_PATH#"$HOME/"}"
+    TARGET=$(dirname "${2}/${TARGET}")
+
+    log "Moving" "$NEWFILE_REAL_LOC"
+    log "Target" "$TARGET"
+
+    # make dir and copy file
+    FILENAME=$(basename "${NEWFILE_PATH}")
+    if [ "$DRY" = true ]; then
+        log cp "${NEWFILE_REAL_LOC} ${TARGET}/${FILENAME}"
+        log rm "${NEWFILE_PATH}"
+    else
+        mkdir -p "${TARGET}"
+        cp "${NEWFILE_REAL_LOC}" "${TARGET}/${FILENAME}"
+        rm "${NEWFILE_PATH}"
+    fi
+}
+
 # ------------------------------
 # Constants
 # ------------------------------
 
 VERBOSE=false
+DRY=false
 
 # get location of the repos
 SCRIPTPATH=$(realpath "$0")
@@ -87,81 +139,51 @@ SCRIPTPATH=$(realpath "$0")
 MAKEDOT=$(get_root "${SCRIPTPATH}")
 # get file path
 
-case $1 in
-    '--help'|'-h')
-        echo Usage:
-        echo "$(basename "$0") filepath"
-        exit 0
-        ;;
-    '--verbose'|'-v')
-        VERBOSE=true
-        log "Script location" "${SCRIPTPATH}"
-        log "Makedot location" "${MAKEDOT}"
-        shift
-        ;;
-    *)
-        ;;
-esac
+function main() {
+    case $1 in
+        '--help'|'-h')
+            echo Usage:
+            echo "$(basename "$0") filepath"
+            return
+            ;;
+        '--verbose'|'-v')
+            VERBOSE=true
+            shift
+            ;;
+        '--dry'|'-n')
+            DRY=true
+            VERBOSE=true
+            shift
+            ;;
+        *)
+            ;;
+    esac
+    log "Script location" "${SCRIPTPATH}"
+    log "Makedot location" "${MAKEDOT}"
 
-declare -a NEWFILE
-NEWFILE[0]=$(readlink -f "$1")
-NEWFILE[1]=$(readlink -f $(dirname "${1}"))/$(basename "${1}")
-# readarray NEWFILE < <(path "$1")
-log "Swallow" "${NEWFILE[0]}"
-log "Path of interest" "${NEWFILE[1]}"
+    # files to consider
+    declare -a MAKEDOT_FILES
+    MAKEDOT_FILES+=( "$@" )
+    echo "Selected:"
+    printf "> %s\n" "${MAKEDOT_FILES[@]}"
+    read -p "Are you sure? [yN]" -n 1 -r USERINPUT
 
-# ------------------------------
-# Sanity Checks
-# ------------------------------
+    case "${USERINPUT}" in
+        y|Y)
+            ${VERBOSE} && echo OK, kidnapping it
+            ;;
+        *)
+            ${VERBOSE} && exit 0
+            ;;
+    esac
 
+    MAKEDOT_REPO=$(makedot_choose_repo)/dotfiles
+    log "Selected repo" "$MAKEDOT_REPO"
 
-# check if file exists
-[ ! -f "${NEWFILE[0]}" ] && echo "no such file ${NEWFILE[0]}" && exit 1
-# check if link to file exists (may be the same as above)
-[ ! -f "${NEWFILE[1]}" ] && echo "no such file ${NEWFILE[1]}" && exit 1
+    for file in "${MAKEDOT_FILES[@]}"; do
+        log "-- CONSIDER --" "$file"
+        makedot_get_file "$file" "$MAKEDOT_REPO"
+    done
+}
 
-# check if file is within this repo
-if [ "${NEWFILE[0]#$MAKEDOT}" != "${NEWFILE[0]}" ]; then
-    # file inside repo
-    echoerr "No! You cannot swallow from this folder"
-    exit 2
-elif [ "${NEWFILE[0]#$HOME}" = "${NEWFILE[0]}" ]; then
-    # file not in HOME
-    echoerr "Please swallow from your HOME"
-    exit 3
-fi
-
-# check if link is within this repo
-if [ "${NEWFILE[1]#$MAKEDOT}" != "${NEWFILE[1]}" ]; then
-    # file inside repo
-    echoerr "No! You cannot swallow from this folder"
-    exit 2
-elif [ "${NEWFILE[1]#$HOME}" = "${NEWFILE[1]}" ]; then
-    # file not in HOME
-    echoerr "Please swallow from your HOME"
-    exit 3
-fi
-
-# ------------------------------
-# Actual script
-# ------------------------------
-
-TARGET_PKG=$(choose_repo)/dotfiles
-TARGET=$(dirname "${TARGET_PKG}/${NEWFILE[1]#${HOME}/}")
-
-${VERBOSE} && echo -e "Copying: ${NEWFILE[0]}\nTo: ${TARGET}"
-
-read -p "Are you sure? [yN]" -n 1 -r USERINPUT
-
-case "${USERINPUT}" in
-    y|Y)
-        ${VERBOSE} && echo OK, kidnapping it
-        ;;
-    *)
-        ${VERBOSE} && exit 0
-        ;;
-esac
-
-# make dir and copy file
-mkdir -p "${TARGET}"
-cp "${NEWFILE[0]}" "${TARGET}"
+main "$@"
