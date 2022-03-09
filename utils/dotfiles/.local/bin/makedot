@@ -123,6 +123,7 @@ makedot_get_file() {
         mkdir -p "${TARGET}"
         cp "${NEWFILE_REAL_LOC}" "${TARGET}/${FILENAME}"
         rm "${NEWFILE_PATH}"
+        [ "$LINKBACK" = "true" ] && ln -s "${TARGET}/${FILENAME}" "${NEWFILE_PATH}"
     fi
 }
 
@@ -132,6 +133,7 @@ makedot_get_file() {
 
 VERBOSE=false
 DRY=false
+LINKBACK=true
 
 # get location of the repos
 SCRIPTPATH=$(realpath "$0")
