@@ -22,9 +22,6 @@ makedot_choose_repo(){
             break
         done
     fi
-
-    # check if choice has been made
-    [ "$repo" ] || exit 0
     echo "$repo"
 }
 
@@ -95,6 +92,7 @@ makedot_get_file() {
     # get file from userspace
     # real location
     NEWFILE_REAL_LOC=$(readlink -f "$1")
+    [ "$NEWFILE_REAL_LOC" = "" ] && NEWFILE_REAL_LOC=$PWD/$1
     # location of interests (different from real location if symlink)
     DIRNAME=$(dirname "$1")
     NEWFILE_PATH=$(readlink -f "$DIRNAME")/$(basename "$1")
@@ -119,6 +117,7 @@ makedot_get_file() {
     if [ "$DRY" = true ]; then
         log cp "${NEWFILE_REAL_LOC} ${TARGET}/${FILENAME}"
         log rm "${NEWFILE_PATH}"
+        log "ln -s" "${TARGET}/${FILENAME} <- ${NEWFILE_PATH}"
     else
         mkdir -p "${TARGET}"
         cp "${NEWFILE_REAL_LOC}" "${TARGET}/${FILENAME}"
@@ -180,6 +179,10 @@ function main() {
     esac
 
     MAKEDOT_REPO=$(makedot_choose_repo)/dotfiles
+    if [ "$MAKEDOT_REPO" = "/dotfiles" ]; then
+        echoerr "No repository was choosen!"
+        return
+    fi
     log "Selected repo" "$MAKEDOT_REPO"
 
     for file in "${MAKEDOT_FILES[@]}"; do
